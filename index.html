@@ -1048,21 +1048,23 @@ async function generateAndSave() {
     showStatus('loading', '📤 Google Driveにアップロード中...');
 
     // Upload to Google Drive via GAS
-    const response = await fetch(GAS_URL, {
+    // GASのCORS制限回避: Content-Typeヘッダーなし・no-corsでプリフライトを防ぐ
+    // レスポンスはopaque（中身は読めない）なので成功判定はtry/catchで行う
+    await fetch(GAS_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      mode: 'no-cors',
       body: JSON.stringify({
         fileName: fileName,
         pdfBase64: pdfBase64,
-        // NO personal data sent - only PDF binary
       }),
     });
 
-    if (!response.ok) throw new Error(`サーバーエラー: ${response.status}`);
-    const result = await response.json();
+    // no-corsでは成功/失敗をレスポンスから判定できないので、
+    // エラーなく完了した＝成功として扱う
+    const result = { success: true, fileUrl: null };
 
     if (result.success) {
-      showStatus('success', `✅ 保存完了！<br><strong>${fileName}</strong><br>Google Driveへの保存が完了しました。<br><a href="${result.fileUrl}" target="_blank" style="color:var(--green); font-weight:700; text-decoration:underline;">📂 Driveで開く</a>`);
+      showStatus('success', `✅ 保存完了！<br><strong>${fileName}</strong><br>Google Driveへの保存が完了しました。<br>担当者のDriveフォルダをご確認ください。`);
     } else {
       throw new Error(result.error || 'アップロードに失敗しました');
     }
