@@ -942,15 +942,13 @@ function buildResumeHTML(data) {
     <!-- 志望動機 -->
     <table style="margin-top:1mm;">
       <tr><td style="font-weight:bold; font-size:7pt; padding:1mm 2mm;">志望の動機、特技、自己PR、アピールポイントなど</td></tr>
-      <tr><td class="motivation-box">${(data.motivation||'').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/
-/g,'<br>')}</td></tr>
+      <tr><td class="motivation-box">${(data.motivation||'').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td></tr>
     </table>
 
     <!-- 本人希望 -->
     <table style="margin-top:1mm;">
       <tr><td style="font-weight:bold; font-size:6.5pt; padding:1mm 2mm;">本人希望記入欄（特に給料・職種・勤務時間・勤務地・その他についての希望などがあれば記入）</td></tr>
-      <tr><td class="wish-box">${(data.wishConditions||'').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/
-/g,'<br>')}</td></tr>
+      <tr><td class="wish-box">${(data.wishConditions||'').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td></tr>
     </table>
   </div>
 </div>
