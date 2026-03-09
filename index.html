@@ -959,13 +959,15 @@ function buildResumeHTML(data) {
 }
 
 // ════════════════════════════════════════════
-// GENERATE & SAVE TO GOOGLE DRIVE（方針F版 - iframeレンダリング）
-// iframeでHTMLを実際に描画 → html2canvasでキャプチャ → jsPDFでPDF化 → GASへ送信
+// GENERATE & SAVE TO GOOGLE DRIVE（方針F版 - DOM直接レンダリング確定版）
 // ════════════════════════════════════════════
 async function generateAndSave() {
   const btn = document.getElementById('btnGenerate');
   btn.disabled = true;
   showStatus('loading', '⏳ 履歴書を生成中...');
+
+  let wrapper = null;
+  let styleTag = null;
 
   try {
     const data = collectData();
@@ -974,83 +976,62 @@ async function generateAndSave() {
     const dateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
     const fileName = `${data.name}_履歴書_${dateStr}.pdf`;
 
-    // 履歴書HTMLを生成
     const html = buildResumeHTML(data);
-
     showStatus('loading', '⏳ PDFを生成中（少々お待ちください）...');
 
-    // iframeでHTMLを実際にレンダリングしてからキャプチャ
-    const pdfBase64 = await new Promise((resolve, reject) => {
-      // A4横 = 297mm × 210mm → 96dpiで約1122px × 794px
-      const A4_W = 1122;
-      const A4_H = 794;
+    // 履歴書HTMLをパースしてスタイルとbodyを取り出す
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const styleContent = doc.querySelector('style')?.textContent || '';
 
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = `position:fixed;left:0;top:0;width:${A4_W}px;height:${A4_H}px;border:none;z-index:-1;opacity:0;`;
-      document.body.appendChild(iframe);
+    // スタイルをdocument.headに追加
+    styleTag = document.createElement('style');
+    styleTag.id = '__resume_style__';
+    styleTag.textContent = styleContent;
+    document.head.appendChild(styleTag);
 
-      iframe.onload = async () => {
-        try {
-          // フォント読み込みを待つ
-          await iframe.contentDocument.fonts.ready;
-          // 念のため追加で待機
-          await new Promise(r => setTimeout(r, 800));
+    // 履歴書をbody直下のfixedコンテナに展開（画面外に配置しない）
+    wrapper = document.createElement('div');
+    wrapper.id = '__resume_capture__';
+    wrapper.style.cssText = 'position:fixed;left:0;top:0;width:1122px;min-height:794px;background:white;z-index:99999;overflow:hidden;';
+    wrapper.innerHTML = doc.body.innerHTML;
+    document.body.appendChild(wrapper);
 
-          const iframeBody = iframe.contentDocument.body;
+    // レンダリング待機（フォント含む）
+    await new Promise(r => setTimeout(r, 600));
 
-          const canvas = await html2canvas(iframeBody, {
-            scale: 2,
-            useCORS: true,
-            allowTaint: true,
-            logging: false,
-            width: A4_W,
-            height: A4_H,
-            windowWidth: A4_W,
-            windowHeight: A4_H,
-          });
-
-          document.body.removeChild(iframe);
-
-          // jsPDFでA4横向きPDFに変換
-          const { jsPDF } = window.jspdf;
-          const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-          const imgData = canvas.toDataURL('image/jpeg', 0.95);
-          pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210);
-
-          const base64 = pdf.output('datauristring').split(',')[1];
-          resolve(base64);
-
-        } catch (err) {
-          document.body.removeChild(iframe);
-          reject(err);
-        }
-      };
-
-      iframe.onerror = (err) => {
-        document.body.removeChild(iframe);
-        reject(new Error('iframeの読み込みに失敗しました'));
-      };
-
-      // BlobURLでHTMLを読み込む（CSSも確実に適用される）
-      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-      iframe.src = URL.createObjectURL(blob);
+    const canvas = await html2canvas(wrapper, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      logging: false,
+      backgroundColor: '#ffffff',
     });
+
+    // クリーンアップ
+    wrapper.remove(); wrapper = null;
+    styleTag.remove(); styleTag = null;
+
+    // jsPDFでA4横向きPDF化
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210);
+    const pdfBase64 = pdf.output('datauristring').split(',')[1];
 
     showStatus('loading', '📤 Google Driveに送信中...');
 
-    // GASへPDFバイナリをBase64で送信
     await fetch(GAS_URL, {
       method: 'POST',
       mode: 'no-cors',
-      body: JSON.stringify({
-        fileName: fileName,
-        pdfBase64: pdfBase64,
-      }),
+      body: JSON.stringify({ fileName, pdfBase64 }),
     });
 
     showStatus('success', `✅ 送信完了！<br><strong>${fileName}</strong><br>担当者のGoogle Driveフォルダに保存されました。`);
 
   } catch (err) {
+    if (wrapper) { wrapper.remove(); }
+    if (styleTag) { styleTag.remove(); }
     showStatus('error', `❌ エラーが発生しました：${err.message}`);
   } finally {
     btn.disabled = false;
